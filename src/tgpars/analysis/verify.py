@@ -186,15 +186,21 @@ def verify_signal(
     order_type: str | None = None,
     exchange_id: str = "binance",
     timeframe: str = "5m",
+    exchange: ccxt.Exchange | None = None,
 ) -> VerifyResult:
-    """High-level: resolve symbol, fetch prices, evaluate outcome."""
+    """High-level: resolve symbol, fetch prices, evaluate outcome.
+
+    Pass a pre-loaded ``exchange`` to verify many signals without reloading
+    markets each time.
+    """
     pair = normalize_symbol(asset)
     if pair is None:
         return VerifyResult(symbol=None, verifiable=False, reason=f"cannot parse asset {asset!r}")
     base, quote = pair
 
-    exchange = getattr(ccxt, exchange_id)({"enableRateLimit": True})
-    exchange.load_markets()
+    if exchange is None:
+        exchange = getattr(ccxt, exchange_id)({"enableRateLimit": True})
+        exchange.load_markets()
     symbol = resolve_market(exchange, base, quote)
     if symbol is None:
         return VerifyResult(

@@ -37,6 +37,10 @@ _LEV_LOSS = re.compile(r"Loss\s*\((\d+)x\)", re.IGNORECASE)
 # e.g. «Стратегия «RSI(2) Коннора» закрыла ЛОНГ ... Результат: +3.1R».
 _STRAT_RE = re.compile(r"Стратегия\s*«([^»]+)»")
 _RESULT_R = re.compile(r"Результат:\s*([+\-−]?\d+(?:[.,]\d+)?)\s*R")
+# Any realized-R figure in a result post, e.g. "+1.27R", "−0.74R", "1.01R".
+_ANY_R = re.compile(r"([+\-−]?\d+(?:[.,]\d+)?)\s*R\b")
+# This message's own signal reference, e.g. "#2170", "#c19", "#f9".
+_REF_RE = re.compile(r"signal\s*(?:id)?[:\s]*#([A-Za-z]*\d+)", re.IGNORECASE)
 
 _CANCEL_KW = ("отмен", "инвалид", "не актуально", "без нас", "не дотян", "ушло без", "ушла без")
 _LOSS_KW = ("стоп", "loss", "минус", "по стопу", "сработал стоп")
@@ -71,16 +75,36 @@ def _normalize_tag(token: str) -> str:
     return letters or "3"
 
 
+def _to_float(raw: str) -> float | None:
+    try:
+        return float(raw.replace("−", "-").replace(",", "."))
+    except ValueError:
+        return None
+
+
 def _parse_result_r(text: str) -> float | None:
     """Parse a strategy bot's 'Результат: ±N.NR' value (handles unicode minus)."""
     m = _RESULT_R.search(text)
-    if not m:
+    return _to_float(m.group(1)) if m else None
+
+
+def realized_r(text: str | None) -> float | None:
+    """Realized R from any result post (strategy 'Результат:' or human '+1.27R')."""
+    if not text:
         return None
-    raw = m.group(1).replace("−", "-").replace(",", ".")
-    try:
-        return float(raw)
-    except ValueError:
+    r = _parse_result_r(text)
+    if r is not None:
+        return r
+    matches = _ANY_R.findall(text)
+    return _to_float(matches[-1]) if matches else None  # last R figure = the result
+
+
+def signal_ref(text: str | None) -> str | None:
+    """This message's signal reference tag, e.g. '#2170', '#c19', '#f9'."""
+    if not text:
         return None
+    m = _REF_RE.search(text)
+    return f"#{m.group(1).lower()}" if m else None
 
 
 def _has_neg_r(text: str) -> bool:
@@ -154,10 +178,22 @@ class TraderScore:
     edited: int = 0
     win_leverages: list[int] = field(default_factory=list)
     loss_leverages: list[int] = field(default_factory=list)
+    sum_r: float = 0.0
+    r_count: int = 0
+    win_refs: set[str] = field(default_factory=set)
 
     @property
     def resolved(self) -> int:
         return self.wins + self.losses
+
+    @property
+    def total_r(self) -> float | None:
+        return round(self.sum_r, 2) if self.r_count else None
+
+    @property
+    def unique_wins(self) -> int | None:
+        """Distinct winning signals (dedupes re-posts of one trade)."""
+        return len(self.win_refs) if self.win_refs else None
 
     @property
     def claimed_winrate(self) -> float | None:
@@ -220,12 +256,20 @@ def score_chat(session: Session, chat_id: int) -> dict[str, TraderScore]:
             s.signals += 1
         elif kind == "win":
             s.wins += 1
+            ref = signal_ref(m.text)
+            if ref:
+                s.win_refs.add(ref)
         elif kind == "loss":
             s.losses += 1
         elif kind == "cancel":
             s.cancels += 1
         elif kind == "breakeven":
             s.breakevens += 1
+        if kind in ("win", "loss"):
+            r = realized_r(m.text)
+            if r is not None:
+                s.sum_r += r
+                s.r_count += 1
         if m.is_deleted:
             s.deleted += 1
         if m.edit_count:
@@ -241,10 +285,10 @@ def score_chat(session: Session, chat_id: int) -> dict[str, TraderScore]:
 def render_report(scores: dict[str, TraderScore], chat_label: str = "") -> str:
     lines = [f"# Manipulation scorecard {chat_label}".rstrip(), ""]
     lines.append(
-        "| trader | signals | win | loss | cancel | claimed WR | cancel% | "
-        "avg lev win/loss | deleted | edited | flags |"
+        "| trader | signals | win | uniq win | loss | cancel | claimed WR | "
+        "sum R | cancel% | avg lev win/loss | deleted | edited | flags |"
     )
-    lines.append("|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|---|")
+    lines.append("|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|---|")
     for tag, s in sorted(scores.items(), key=lambda kv: -(kv[1].signals + kv[1].cancels)):
         if s.signals == 0 and s.resolved == 0 and s.cancels == 0:
             continue
@@ -260,9 +304,14 @@ def render_report(scores: dict[str, TraderScore], chat_label: str = "") -> str:
             if (s.avg_win_leverage or s.avg_loss_leverage)
             else "—"
         )
+        if s.total_r is not None and s.total_r < 0:
+            flags.append("⚠️negative-R")
         lines.append(
-            f"| {tag} | {s.signals} | {s.wins} | {s.losses} | {s.cancels} | "
+            f"| {tag} | {s.signals} | {s.wins} | "
+            f"{s.unique_wins if s.unique_wins is not None else '—'} | "
+            f"{s.losses} | {s.cancels} | "
             f"{s.claimed_winrate if s.claimed_winrate is not None else '—'} | "
+            f"{s.total_r if s.total_r is not None else '—'} | "
             f"{s.cancel_rate if s.cancel_rate is not None else '—'} | {lev} | "
             f"{s.deleted} | {s.edited} | {' '.join(flags) or ''} |"
         )

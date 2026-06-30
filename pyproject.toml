@@ -29,6 +29,7 @@ tgpars-collect = "tgpars.collector.daemon:main"
 tgpars-backfill = "tgpars.scripts.backfill:main"
 tgpars-export = "tgpars.analysis.export:main"
 tgpars-score = "tgpars.analysis.metrics:main"
+tgpars-verify-batch = "tgpars.analysis.verify_batch:main"
 
 [build-system]
 requires = ["setuptools>=68"]
