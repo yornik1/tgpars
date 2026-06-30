@@ -12,9 +12,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Added in later phases (signal parsing / price verification).
+# Price verification (Phase 3). No LLM API dependency by design: analysis is
+# done by an in-session LLM agent (Claude Code / Codex) reading the exporter
+# output, not by a paid per-token API call from inside the app.
 analysis = [
-    "anthropic>=0.40",
     "ccxt>=4.3",
 ]
 dev = [
@@ -26,6 +27,7 @@ dev = [
 tgpars-login = "tgpars.scripts.login:main"
 tgpars-collect = "tgpars.collector.daemon:main"
 tgpars-backfill = "tgpars.scripts.backfill:main"
+tgpars-export = "tgpars.analysis.export:main"
 
 [build-system]
 requires = ["setuptools>=68"]
