@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tgpars.collector</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/mich/PycharmProjects/tgpars/.venv/bin/tgpars-collect</string>
+    </array>
+
+    <!-- Resolve .env, sessions/ and data/ relative to the repo. -->
+    <key>WorkingDirectory</key>
+    <string>/Users/mich/PycharmProjects/tgpars</string>
+
+    <!-- Start on login and keep it alive (restart on crash). -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Avoid tight crash-loops: wait 30s between restarts. -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/mich/PycharmProjects/tgpars/data/logs/collector.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/mich/PycharmProjects/tgpars/data/logs/collector.err.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
