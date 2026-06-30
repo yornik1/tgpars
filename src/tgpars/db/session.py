@@ -28,8 +28,28 @@ def create_db_engine(database_url: str) -> Engine:
 
 
 def init_db(engine: Engine) -> None:
-    """Create all tables if they do not exist."""
+    """Create all tables if they do not exist, then apply lightweight migrations."""
     Base.metadata.create_all(engine)
+    _ensure_columns(engine)
+
+
+def _ensure_columns(engine: Engine) -> None:
+    """Idempotently add columns introduced after a table was first created.
+
+    SQLAlchemy's create_all does not ALTER existing tables, so new nullable
+    columns are added here for already-existing SQLite databases.
+    """
+    from sqlalchemy import text
+
+    wanted = {"messages": {"reply_to_msg_id": "BIGINT"}}
+    with engine.begin() as conn:
+        for table, columns in wanted.items():
+            existing = {
+                row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))
+            }
+            for name, coltype in columns.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {coltype}"))
 
 
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:

@@ -45,6 +45,10 @@ class Message(Base):
     sender_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     sender_username: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # Telegram threads result/update posts as replies to the original signal;
+    # this lets us attribute untagged updates back to their signal/trader.
+    reply_to_msg_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+
     # Content. original_text preserves what we first saw; text tracks current state.
     original_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     text: Mapped[str | None] = mapped_column(Text, nullable=True)

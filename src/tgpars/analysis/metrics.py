@@ -33,6 +33,10 @@ _SIGNAL_REF = re.compile(r"signal\s*id[:\s]*#([A-Za-z]*\d+)", re.IGNORECASE)
 _SIGNAL_F = re.compile(r"signal[:\s]*#([A-Za-z]\d+)", re.IGNORECASE)
 _LEV_PROFIT = re.compile(r"Profit\s*\((\d+)x\)", re.IGNORECASE)
 _LEV_LOSS = re.compile(r"Loss\s*\((\d+)x\)", re.IGNORECASE)
+# Algorithmic strategy-bot posts (a separate stream from the human sub-traders),
+# e.g. «Стратегия «RSI(2) Коннора» закрыла ЛОНГ ... Результат: +3.1R».
+_STRAT_RE = re.compile(r"Стратегия\s*«([^»]+)»")
+_RESULT_R = re.compile(r"Результат:\s*([+\-−]?\d+(?:[.,]\d+)?)\s*R")
 
 _CANCEL_KW = ("отмен", "инвалид", "не актуально", "без нас", "не дотян", "ушло без", "ушла без")
 _LOSS_KW = ("стоп", "loss", "минус", "по стопу", "сработал стоп")
@@ -43,6 +47,9 @@ def trader_tag(text: str | None) -> str | None:
     """Best-effort sub-trader id from a message."""
     if not text:
         return None
+    m = _STRAT_RE.search(text)
+    if m:  # algorithmic strategy bot -> its own bucket, not a human trader
+        return f"strat:{m.group(1)}"
     m = _TRADER_BRACKET.search(text)
     if m:
         return _normalize_tag(m.group(1))
@@ -64,6 +71,18 @@ def _normalize_tag(token: str) -> str:
     return letters or "3"
 
 
+def _parse_result_r(text: str) -> float | None:
+    """Parse a strategy bot's 'Результат: ±N.NR' value (handles unicode minus)."""
+    m = _RESULT_R.search(text)
+    if not m:
+        return None
+    raw = m.group(1).replace("−", "-").replace(",", ".")
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
 def _has_neg_r(text: str) -> bool:
     return bool(re.search(r"-\d+([.,]\d+)?\s*R", text)) or bool(
         re.search(r"минус\s*\d", text.lower())
@@ -81,6 +100,19 @@ def classify(text: str | None) -> str:
     if not text:
         return "other"
     low = text.lower()
+
+    # 0. Strategy-bot posts are self-contained: open -> signal, close -> win/loss
+    #    by the stated ±R (covers ✅ target, 🛑 stop, ⚪ reverse-signal exit).
+    if "стратегия" in low and "«" in text:
+        if "открыла" in low:
+            return "signal"
+        if "закрыла" in low:
+            r = _parse_result_r(text)
+            if "поймала стоп" in low or (r is not None and r < 0):
+                return "loss"
+            if "цель достигнута" in low or (r is not None and r > 0):
+                return "win"
+            return "other"
 
     # 1. A fresh signal: entry + level structure, not a result/management note.
     has_entry = any(k in low for k in ("вход", "entry", "💲"))
@@ -145,15 +177,42 @@ class TraderScore:
         return round(sum(self.loss_leverages) / len(self.loss_leverages), 1) if self.loss_leverages else None
 
 
+def _resolve_tags(messages: list[Message]) -> dict[int, str | None]:
+    """Map each message_id to a trader tag, inheriting via the reply_to chain.
+
+    A result/update post usually carries no tag but is a reply to the original
+    (tagged) signal, so we walk reply_to up to its tagged ancestor.
+    """
+    by_id = {m.message_id: m for m in messages}
+    direct = {m.message_id: trader_tag(m.text) for m in messages}
+    resolved: dict[int, str | None] = {}
+
+    def resolve(mid: int) -> str | None:
+        seen: set[int] = set()
+        cur: int | None = mid
+        while cur is not None and cur not in seen:
+            seen.add(cur)
+            if direct.get(cur):
+                return direct[cur]
+            parent = by_id.get(cur)
+            cur = parent.reply_to_msg_id if parent else None
+        return None
+
+    for m in messages:
+        resolved[m.message_id] = resolve(m.message_id)
+    return resolved
+
+
 def score_chat(session: Session, chat_id: int) -> dict[str, TraderScore]:
     messages = list(
         session.scalars(
             select(Message).where(Message.chat_id == chat_id).order_by(Message.posted_at)
         )
     )
+    tags = _resolve_tags(messages)
     scores: dict[str, TraderScore] = defaultdict(lambda: TraderScore(tag="?"))
     for m in messages:
-        tag = trader_tag(m.text) or "unknown"
+        tag = tags.get(m.message_id) or "unknown"
         s = scores[tag]
         s.tag = tag
         kind = classify(m.text)

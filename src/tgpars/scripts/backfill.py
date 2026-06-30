@@ -50,6 +50,7 @@ async def _backfill_chat(
                 text=message.message or None,
                 media_type=media_type(message),
                 posted_at=as_utc(message.date),
+                reply_to_msg_id=message.reply_to_msg_id,
             )
         stored += 1
 

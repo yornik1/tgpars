@@ -68,6 +68,7 @@ def _register_handlers(client: TelegramClient, session_factory, target_ids: list
                 text=event.message.message or None,
                 media_type=media_type(event.message),
                 posted_at=as_utc(event.message.date),
+                reply_to_msg_id=event.message.reply_to_msg_id,
             )
         log.info("msg %s/%s stored", event.chat_id, event.message.id)
 

@@ -29,14 +29,23 @@ def upsert_message(
     text: str | None,
     media_type: str | None,
     posted_at: datetime,
+    reply_to_msg_id: int | None = None,
 ) -> Message:
-    """Insert a new message snapshot, or return the existing one if already stored."""
+    """Insert a new message snapshot, or return the existing one if already stored.
+
+    If the row already exists but is missing ``reply_to_msg_id`` (e.g. captured
+    before that column existed), backfill the value without touching anything
+    else — this preserves live-captured deletion/edit state.
+    """
     existing = session.scalar(
         select(Message).where(
             Message.chat_id == chat_id, Message.message_id == message_id
         )
     )
     if existing is not None:
+        if existing.reply_to_msg_id is None and reply_to_msg_id is not None:
+            existing.reply_to_msg_id = reply_to_msg_id
+            session.commit()
         return existing
 
     msg = Message(
@@ -48,6 +57,7 @@ def upsert_message(
         text=text,
         media_type=media_type,
         posted_at=posted_at,
+        reply_to_msg_id=reply_to_msg_id,
         collected_at=_utcnow(),
     )
     session.add(msg)
