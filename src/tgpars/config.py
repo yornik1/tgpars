@@ -31,6 +31,9 @@ class Settings(BaseSettings):
 
     # Storage
     database_url: str = Field("sqlite:///data/tgpars.db", alias="DATABASE_URL")
+    # Where downloaded photos are saved. Set DOWNLOAD_MEDIA=0 to skip downloading.
+    media_dir: str = Field("data/media", alias="MEDIA_DIR")
+    download_media: bool = Field(True, alias="DOWNLOAD_MEDIA")
 
     # Politeness
     flood_sleep_threshold: int = Field(60, alias="FLOOD_SLEEP_THRESHOLD")

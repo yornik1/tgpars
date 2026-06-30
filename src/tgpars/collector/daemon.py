@@ -25,7 +25,7 @@ from ..db.session import create_db_engine, init_db, make_session_factory
 from ..notify import Notifier
 from ..tg_client import build_client
 from . import storage
-from .util import as_utc, media_type
+from .util import as_utc, download_photo, media_type
 
 log = logging.getLogger("tgpars.collector")
 
@@ -66,6 +66,14 @@ def _register_handlers(
     async def on_new_message(event):  # noqa: ANN001
         sender = await event.get_sender()
         username = getattr(sender, "username", None) if sender else None
+        mpath = None
+        if settings.download_media:
+            mpath = await download_photo(
+                event.message,
+                chat_id=event.chat_id,
+                message_id=event.message.id,
+                media_dir=settings.media_dir,
+            )
         with session_factory() as session:
             storage.upsert_message(
                 session,
@@ -77,6 +85,7 @@ def _register_handlers(
                 media_type=media_type(event.message),
                 posted_at=as_utc(event.message.date),
                 reply_to_msg_id=event.message.reply_to_msg_id,
+                media_path=mpath,
             )
         log.info("msg %s/%s stored", event.chat_id, event.message.id)
 

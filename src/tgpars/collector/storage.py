@@ -30,6 +30,7 @@ def upsert_message(
     media_type: str | None,
     posted_at: datetime,
     reply_to_msg_id: int | None = None,
+    media_path: str | None = None,
 ) -> Message:
     """Insert a new message snapshot, or return the existing one if already stored.
 
@@ -43,8 +44,14 @@ def upsert_message(
         )
     )
     if existing is not None:
+        dirty = False
         if existing.reply_to_msg_id is None and reply_to_msg_id is not None:
             existing.reply_to_msg_id = reply_to_msg_id
+            dirty = True
+        if existing.media_path is None and media_path is not None:
+            existing.media_path = media_path
+            dirty = True
+        if dirty:
             session.commit()
         return existing
 
@@ -58,6 +65,7 @@ def upsert_message(
         media_type=media_type,
         posted_at=posted_at,
         reply_to_msg_id=reply_to_msg_id,
+        media_path=media_path,
         collected_at=_utcnow(),
     )
     session.add(msg)

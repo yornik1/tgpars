@@ -41,7 +41,7 @@ def _ensure_columns(engine: Engine) -> None:
     """
     from sqlalchemy import text
 
-    wanted = {"messages": {"reply_to_msg_id": "BIGINT"}}
+    wanted = {"messages": {"reply_to_msg_id": "BIGINT", "media_path": "VARCHAR(255)"}}
     with engine.begin() as conn:
         for table, columns in wanted.items():
             existing = {

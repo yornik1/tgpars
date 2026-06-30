@@ -53,6 +53,8 @@ class Message(Base):
     original_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
     media_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Local path to a downloaded photo, if any (kept even after the post is deleted).
+    media_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Timestamps (all UTC).
     posted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
