@@ -55,6 +55,6 @@ what we stored — Telegram does not return a message's content once it is delet
 - [x] Phase 1 — collector daemon + SQLite schema (new / edited / deleted)
 - [x] Phase 1.5 — read-only history backfill (`tgpars-backfill`)
 - [x] Phase 2 — DB exporter for in-session LLM analysis (`tgpars-export`)
-- [ ] Phase 3 — price verification (ccxt, pure code)
+- [x] Phase 3 — price verification (`verify.py`, ccxt, pure code)
 - [ ] Phase 4 — manipulation metrics + report (winrate, deletion/edit rates)
 - [ ] 24/7 hosting (launchd / VPS) so live deletions are not missed
