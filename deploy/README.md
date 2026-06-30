@@ -36,5 +36,33 @@ launchctl load   -w ~/Library/LaunchAgents/com.tgpars.collector.plist
 ```
 
 > A Mac that is asleep does not run the agent — live deletions during sleep are
-> missed. For true 24/7 use an always-on host (small VPS) with the same setup
-> under systemd instead.
+> missed. For true 24/7 use the VPS + systemd setup below instead, and keep the
+> Mac LaunchAgent **unloaded** (one Telegram session = one writer; never run both).
+
+## 24/7 on a Linux VPS (systemd)
+
+Deployed on host `claw` (Ubuntu, AWS). The unit `tgpars-collector.service` runs
+`tgpars-collect` from the repo venv with `Restart=always` and starts on boot.
+
+Provision / update:
+```bash
+# from the repo on the Mac (with the local daemon stopped):
+rsync -az --exclude .venv --exclude .git --exclude data ./src ./pyproject.toml claw:~/tgpars/
+rsync -az ./.env ./sessions/tgpars.session claw:~/tgpars/        # sensitive: account access
+rsync -az ./data/tgpars.db claw:~/tgpars/data/                   # optional: ship history
+
+ssh claw 'cd ~/tgpars && python3 -m venv .venv && .venv/bin/pip install -e ".[analysis]"'
+scp deploy/tgpars-collector.service claw:/tmp/
+ssh claw 'sudo mv /tmp/tgpars-collector.service /etc/systemd/system/ && \
+  sudo systemctl daemon-reload && sudo systemctl enable --now tgpars-collector'
+```
+
+Operate:
+```bash
+ssh claw 'systemctl status tgpars-collector'
+ssh claw 'journalctl -u tgpars-collector -f'            # live logs
+ssh claw 'sudo systemctl restart tgpars-collector'
+```
+
+> Same single-writer rule: before running `tgpars-backfill` on the VPS, stop the
+> service (`sudo systemctl stop tgpars-collector`), backfill, then start it again.

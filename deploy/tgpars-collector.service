@@ -1,0 +1,18 @@
+[Unit]
+Description=tgpars Telegram collector daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/tgpars
+ExecStart=/home/ubuntu/tgpars/.venv/bin/tgpars-collect
+Restart=always
+RestartSec=10
+# Keep logs in journald; view with: journalctl -u tgpars-collector -f
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
