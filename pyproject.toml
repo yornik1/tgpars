@@ -1,0 +1,38 @@
+[project]
+name = "tgpars"
+version = "0.1.0"
+description = "Collect messages from closed Telegram crypto-signal groups and detect manipulation (deleted/edited posts, fake winrate)."
+requires-python = ">=3.11"
+dependencies = [
+    "telethon>=1.36",
+    "sqlalchemy>=2.0",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+# Added in later phases (signal parsing / price verification).
+analysis = [
+    "anthropic>=0.40",
+    "ccxt>=4.3",
+]
+dev = [
+    "ruff>=0.5",
+    "pytest>=8.0",
+]
+
+[project.scripts]
+tgpars-login = "tgpars.scripts.login:main"
+tgpars-collect = "tgpars.collector.daemon:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
