@@ -56,5 +56,10 @@ what we stored — Telegram does not return a message's content once it is delet
 - [x] Phase 1.5 — read-only history backfill (`tgpars-backfill`)
 - [x] Phase 2 — DB exporter for in-session LLM analysis (`tgpars-export`)
 - [x] Phase 3 — price verification (`verify.py`, ccxt, pure code)
-- [x] Phase 4 — per-trader manipulation scorecard (`tgpars-score`)
+- [x] Phase 4 — per-trader manipulation scorecard (`tgpars-score`): reply-context
+      attribution, strategy-bot buckets, sum-R, repost dedup
+- [x] Phase 4b — bulk price-verified REAL win-rate (`tgpars-verify-batch`)
 - [x] 24/7 hosting — macOS launchd agent (`deploy/`)
+
+CLIs: `tgpars-login`, `tgpars-collect` (daemon), `tgpars-backfill`,
+`tgpars-export`, `tgpars-score`, `tgpars-verify-batch`.
