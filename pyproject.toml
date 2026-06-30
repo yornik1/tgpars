@@ -25,6 +25,7 @@ dev = [
 [project.scripts]
 tgpars-login = "tgpars.scripts.login:main"
 tgpars-collect = "tgpars.collector.daemon:main"
+tgpars-backfill = "tgpars.scripts.backfill:main"
 
 [build-system]
 requires = ["setuptools>=68"]

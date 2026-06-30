@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import timezone
 
 from telethon import TelegramClient, events
 
@@ -25,19 +24,9 @@ from ..config import Settings, load_settings
 from ..db.session import create_db_engine, init_db, make_session_factory
 from ..tg_client import build_client
 from . import storage
+from .util import as_utc, media_type
 
 log = logging.getLogger("tgpars.collector")
-
-
-def _media_type(message) -> str | None:
-    media = getattr(message, "media", None)
-    return type(media).__name__ if media is not None else None
-
-
-def _as_utc(dt):
-    if dt is None:
-        return None
-    return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 async def _resolve_targets(client: TelegramClient, settings: Settings) -> list[int]:
@@ -77,8 +66,8 @@ def _register_handlers(client: TelegramClient, session_factory, target_ids: list
                 sender_id=event.sender_id,
                 sender_username=username,
                 text=event.message.message or None,
-                media_type=_media_type(event.message),
-                posted_at=_as_utc(event.message.date),
+                media_type=media_type(event.message),
+                posted_at=as_utc(event.message.date),
             )
         log.info("msg %s/%s stored", event.chat_id, event.message.id)
 
@@ -90,7 +79,7 @@ def _register_handlers(client: TelegramClient, session_factory, target_ids: list
                 chat_id=event.chat_id,
                 message_id=event.message.id,
                 new_text=event.message.message or None,
-                telegram_edit_date=_as_utc(event.message.edit_date),
+                telegram_edit_date=as_utc(event.message.edit_date),
             )
         if edit is not None:
             log.info("msg %s/%s edited", event.chat_id, event.message.id)

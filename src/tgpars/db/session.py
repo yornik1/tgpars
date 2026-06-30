@@ -21,7 +21,10 @@ def _ensure_sqlite_dir(database_url: str) -> None:
 
 def create_db_engine(database_url: str) -> Engine:
     _ensure_sqlite_dir(database_url)
-    return create_engine(database_url, future=True)
+    # A busy timeout lets the collector and backfill share the SQLite file
+    # without immediate "database is locked" errors.
+    connect_args = {"timeout": 30} if database_url.startswith("sqlite") else {}
+    return create_engine(database_url, future=True, connect_args=connect_args)
 
 
 def init_db(engine: Engine) -> None:
