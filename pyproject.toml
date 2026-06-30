@@ -30,6 +30,7 @@ tgpars-backfill = "tgpars.scripts.backfill:main"
 tgpars-export = "tgpars.analysis.export:main"
 tgpars-score = "tgpars.analysis.metrics:main"
 tgpars-verify-batch = "tgpars.analysis.verify_batch:main"
+tgpars-verify-bots = "tgpars.analysis.verify_bots:main"
 
 [build-system]
 requires = ["setuptools>=68"]
