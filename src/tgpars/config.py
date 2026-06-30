@@ -35,6 +35,21 @@ class Settings(BaseSettings):
     # Politeness
     flood_sleep_threshold: int = Field(60, alias="FLOOD_SLEEP_THRESHOLD")
 
+    # Notifications (optional): a Telegram bot that DMs alerts to one user.
+    # Leave token empty to disable. chat_id is the recipient's user id.
+    tg_bot_token: str = Field("", alias="TG_BOT_TOKEN")
+    tg_alert_chat_id: str = Field("", alias="TG_ALERT_CHAT_ID")
+    # What to alert on (comma-separated): deletion, edit. Default: deletion.
+    alert_on: str = Field("deletion", alias="ALERT_ON")
+
+    @property
+    def alerts_enabled(self) -> bool:
+        return bool(self.tg_bot_token and self.tg_alert_chat_id)
+
+    @property
+    def alert_events(self) -> set[str]:
+        return {e.strip() for e in self.alert_on.split(",") if e.strip()}
+
     @property
     def target_chats(self) -> list[str]:
         """Target chats as a cleaned list of identifiers (usernames / links / ids)."""

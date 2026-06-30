@@ -22,6 +22,7 @@ from telethon import TelegramClient, events
 
 from ..config import Settings, load_settings
 from ..db.session import create_db_engine, init_db, make_session_factory
+from ..notify import Notifier
 from ..tg_client import build_client
 from . import storage
 from .util import as_utc, media_type
@@ -53,7 +54,14 @@ async def _resolve_targets(client: TelegramClient, settings: Settings) -> list[i
     return resolved
 
 
-def _register_handlers(client: TelegramClient, session_factory, target_ids: list[int]) -> None:
+def _register_handlers(
+    client: TelegramClient, session_factory, target_ids: list[int], settings: Settings
+) -> None:
+    notifier = Notifier(
+        settings.tg_bot_token, settings.tg_alert_chat_id, enabled=settings.alerts_enabled
+    )
+    alert_events = settings.alert_events
+
     @client.on(events.NewMessage(chats=target_ids))
     async def on_new_message(event):  # noqa: ANN001
         sender = await event.get_sender()
@@ -84,6 +92,13 @@ def _register_handlers(client: TelegramClient, session_factory, target_ids: list
             )
         if edit is not None:
             log.info("msg %s/%s edited", event.chat_id, event.message.id)
+            if "edit" in alert_events:
+                prev = (edit.previous_text or "")[:500]
+                new = (edit.new_text or "")[:500]
+                notifier.send(
+                    f"✏️ EDITED in {event.chat_id} (msg {event.message.id})\n\n"
+                    f"BEFORE:\n{prev}\n\nAFTER:\n{new}"
+                )
 
     @client.on(events.MessageDeleted(chats=target_ids))
     async def on_message_deleted(event):  # noqa: ANN001
@@ -93,9 +108,22 @@ def _register_handlers(client: TelegramClient, session_factory, target_ids: list
                     session, chat_id=event.chat_id, message_id=message_id
                 )
                 status = "matched" if matched else "unmatched"
-                log.info(
-                    "DELETION %s/%s (%s)", event.chat_id, message_id, status
-                )
+                log.info("DELETION %s/%s (%s)", event.chat_id, message_id, status)
+                if "deletion" in alert_events:
+                    if matched is not None:
+                        body = (matched.text or "(media / no text)")[:700]
+                        when = (
+                            matched.posted_at.isoformat() if matched.posted_at else "?"
+                        )
+                        notifier.send(
+                            f"🗑 DELETED post caught in {event.chat_id}\n"
+                            f"msg {message_id}, originally posted {when}\n\n{body}"
+                        )
+                    else:
+                        notifier.send(
+                            f"🗑 DELETION detected in {event.chat_id} (msg {message_id}) "
+                            f"— content was not captured (posted while collector was down)."
+                        )
 
 
 async def _run() -> None:
@@ -114,8 +142,13 @@ async def _run() -> None:
         )
 
     target_ids = await _resolve_targets(client, settings)
-    _register_handlers(client, session_factory, target_ids)
+    _register_handlers(client, session_factory, target_ids, settings)
 
+    log.info(
+        "Alerts: %s (events: %s)",
+        "ON" if settings.alerts_enabled else "off",
+        ",".join(sorted(settings.alert_events)) if settings.alerts_enabled else "-",
+    )
     log.info("Collector running. Watching %d chat(s). Ctrl-C to stop.", len(target_ids))
     await client.run_until_disconnected()
 
