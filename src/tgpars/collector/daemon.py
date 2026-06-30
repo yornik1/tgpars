@@ -116,7 +116,12 @@ async def _run() -> None:
     session_factory = make_session_factory(engine)
 
     client = build_client(settings)
-    await client.start(phone=lambda: settings.tg_phone or input("Phone (E.164): "))
+    await client.connect()
+    if not await client.is_user_authorized():
+        raise SystemExit(
+            "Not authorised yet. Run `python -m tgpars.scripts.login` first "
+            "to create the session."
+        )
 
     target_ids = await _resolve_targets(client, settings)
     _register_handlers(client, session_factory, target_ids)

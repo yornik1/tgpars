@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     tg_phone: str = Field("", alias="TG_PHONE")
     tg_session_path: str = Field("sessions/tgpars", alias="TG_SESSION_PATH")
 
+    # One-time login (non-interactive). Filled in only while authorising:
+    # the code Telegram sends to your app, and your 2FA password if enabled.
+    tg_login_code: str = Field("", alias="TG_LOGIN_CODE")
+    tg_2fa_password: str = Field("", alias="TG_2FA_PASSWORD")
+
     # Monitoring targets (raw comma-separated string; see target_chats for parsed form).
     tg_target_chats_raw: str = Field("", alias="TG_TARGET_CHATS")
 
