@@ -28,6 +28,7 @@ tgpars-login = "tgpars.scripts.login:main"
 tgpars-collect = "tgpars.collector.daemon:main"
 tgpars-backfill = "tgpars.scripts.backfill:main"
 tgpars-export = "tgpars.analysis.export:main"
+tgpars-score = "tgpars.analysis.metrics:main"
 
 [build-system]
 requires = ["setuptools>=68"]
