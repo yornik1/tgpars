@@ -23,9 +23,13 @@ from ..db.models import Message
 from ..db.session import create_db_engine, init_db, make_session_factory
 from . import metrics
 
-_LEV_PROFIT = re.compile(r"Profit\s*\((\d+)x\)", re.IGNORECASE)
-_LEV_LOSS = re.compile(r"Loss\s*\((\d+)x\)", re.IGNORECASE)
-_PROFIT_PCT = re.compile(r"([\d.,]+)%\s*Profit", re.IGNORECASE)
+_LEV_PROFIT = re.compile(r"([\d.,]+)%\s*Profit\s*\((\d+)x\)", re.IGNORECASE)
+_LEV_LOSS = re.compile(r"([\d.,]+)%\s*Loss\s*\((\d+)x\)", re.IGNORECASE)
+_TARGET_LINE = re.compile(r"Target\s*\d+:", re.IGNORECASE)
+
+
+def _fnum(s: str) -> float:
+    return float(s.replace(",", "."))
 
 
 def _quote(text: str | None, limit: int = 240) -> str:
@@ -44,54 +48,64 @@ def _load(session: Session, chat_id: int) -> list[Message]:
 
 
 def find_leverage_asymmetry(messages: list[Message]) -> list[dict]:
-    """Wins quoted at higher leverage than losses — same account, different optics."""
-    wins, losses = [], []
+    """The real trick: wins quoted at one leverage, losses at another — always.
+
+    Also recomputes what the record would look like at a SINGLE consistent
+    leverage, using the spot move implied by each post (reported % / leverage).
+    The stop being ~2x further than TP1 means constant leverage is net-losing;
+    the green feed only exists because of the win/loss leverage switch.
+    """
+    win_levs, loss_levs = [], []
+    win_tp1_spot, loss_spot = [], []  # spot move %% = reported %% / leverage
+    win_ex = loss_ex = None
     for m in messages:
         if not m.text:
             continue
         pw = _LEV_PROFIT.search(m.text)
         pl = _LEV_LOSS.search(m.text)
         if pw:
-            wins.append((int(pw.group(1)), m))
+            lev = int(pw.group(2))
+            win_levs.append(lev)
+            if len(_TARGET_LINE.findall(m.text)) == 1:  # TP1-only = the modal win
+                win_tp1_spot.append(_fnum(pw.group(1)) / lev)
+            win_ex = (m.message_id, _quote(m.text))
         if pl:
-            losses.append((int(pl.group(1)), m))
-    if not wins or not losses:
+            lev = int(pl.group(2))
+            loss_levs.append(lev)
+            loss_spot.append(_fnum(pl.group(1)) / lev)
+            loss_ex = (m.message_id, _quote(m.text))
+
+    if not win_levs or not loss_levs:
         return []
-    win_levs = {w for w, _ in wins}
-    loss_levs = {l for l, _ in losses}
-    if max(win_levs) <= min(loss_levs):
+    win_set, loss_set = sorted(set(win_levs)), sorted(set(loss_levs))
+    if max(win_set) <= min(loss_set):
         return []  # no asymmetry
-    return [
-        {
-            "kind": "leverage_asymmetry",
-            "win_leverage": sorted(win_levs),
-            "loss_leverage": sorted(loss_levs),
-            "win_example": (wins[-1][1].message_id, _quote(wins[-1][1].text)),
-            "loss_example": (losses[-1][1].message_id, _quote(losses[-1][1].text)),
-            "win_count": len(wins),
-            "loss_count": len(losses),
+
+    fact = {
+        "kind": "leverage_asymmetry",
+        "win_leverage": win_set,
+        "loss_leverage": loss_set,
+        "win_count": len(win_levs),
+        "loss_count": len(loss_levs),
+        "win_all_same": len(win_set) == 1,
+        "loss_all_same": len(loss_set) == 1,
+        "win_example": win_ex,
+        "loss_example": loss_ex,
+    }
+    if win_tp1_spot and loss_spot:
+        avg_win = sum(win_tp1_spot) / len(win_tp1_spot)
+        avg_loss = sum(loss_spot) / len(loss_spot)
+        hi = max(win_set)  # the leverage their wins use
+        fact["recompute"] = {
+            "avg_tp1_spot": round(avg_win, 2),
+            "avg_stop_spot": round(avg_loss, 2),
+            "reported_win": round(avg_win * max(win_set), 1),
+            "reported_loss": round(avg_loss * min(loss_set), 1),
+            "honest_hi_win": round(avg_win * hi, 1),
+            "honest_hi_loss": round(avg_loss * hi, 1),
+            "stops_per_win": round((avg_loss * hi) / (avg_win * hi), 1),
         }
-    ]
-
-
-def find_repost_inflation(messages: list[Message]) -> list[dict]:
-    """One trade re-posted several times as its profit grows -> inflated win count."""
-    by_ref: dict[str, list[Message]] = defaultdict(list)
-    for m in messages:
-        if m.text and _LEV_PROFIT.search(m.text):
-            ref = metrics.signal_ref(m.text)
-            if ref:
-                by_ref[ref].append(m)
-    out = []
-    for ref, msgs in by_ref.items():
-        if len(msgs) >= 3:  # same trade posted 3+ times
-            pcts = []
-            for m in msgs:
-                pm = _PROFIT_PCT.search(m.text or "")
-                if pm:
-                    pcts.append((pm.group(1) + "%", m.message_id, _quote(m.text, 120)))
-            out.append({"kind": "repost_inflation", "ref": ref, "times": len(msgs), "posts": pcts})
-    return sorted(out, key=lambda d: -d["times"])[:3]
+    return [fact]
 
 
 def find_captured_deletions(messages: list[Message]) -> list[dict]:
@@ -160,7 +174,6 @@ def gather(session: Session, chat_id: int) -> dict:
         "chat_id": chat_id,
         "total_messages": len(messages),
         "leverage_asymmetry": find_leverage_asymmetry(messages),
-        "repost_inflation": find_repost_inflation(messages),
         "high_cancel": sorted(high_cancel, key=lambda x: -x[1]),
         "negative_sum_r": sorted(negative_r, key=lambda x: x[1]),
         "captured_deletions": find_captured_deletions(messages),
@@ -188,37 +201,42 @@ def render(ev: dict) -> str:
 
     if ev["leverage_asymmetry"]:
         a = ev["leverage_asymmetry"][0]
-        L.append("## FACT 1 — Leverage asymmetry (wins vs losses counted differently)")
-        L.append(f"Wins are quoted at leverage {a['win_leverage']}, losses at {a['loss_leverage']}.")
+        L.append("## FACT 1 — The leverage switch (the strongest, provable trick)")
+        allw = "ALL" if a.get("win_all_same") else "most"
+        alll = "ALL" if a.get("loss_all_same") else "most"
+        L.append(f"{allw} {a['win_count']} winning posts are quoted at {a['win_leverage']}x; "
+                 f"{alll} {a['loss_count']} losing posts at {a['loss_leverage']}x. "
+                 "Not once is a loss shown at the win leverage.")
         L.append(f"- WIN post (msg {a['win_example'][0]}): \"{a['win_example'][1]}\"")
         L.append(f"- LOSS post (msg {a['loss_example'][0]}): \"{a['loss_example'][1]}\"")
-        L.append("Why it's a trick: same account, but profit is shown at a higher multiplier "
-                 "than loss, so the feed looks far greener than the real result.\n")
-
-    if ev["repost_inflation"]:
-        L.append("## FACT 2 — One trade re-posted as growing profit (win-count inflation)")
-        for r in ev["repost_inflation"]:
-            posts = " → ".join(p[0] for p in r["posts"]) or f"{r['times']} times"
-            L.append(f"- Trade {r['ref']} posted {r['times']} times: {posts} "
-                     f"(msgs {[p[1] for p in r['posts']]})")
-        L.append("Why it's a trick: it's ONE trade, but each re-post reads as another 'win'.\n")
+        r = a.get("recompute")
+        if r:
+            L.append(f"The math: on average price moves +{r['avg_tp1_spot']}% to TP1 but "
+                     f"-{r['avg_stop_spot']}% to the stop — the stop is ~2x further. "
+                     f"They report the win at {a['win_leverage'][-1]}x (+{r['reported_win']}%) "
+                     f"and the loss at {a['loss_leverage'][0]}x (only -{r['reported_loss']}%).")
+            L.append(f"If you actually used their WIN leverage ({a['win_leverage'][-1]}x) on BOTH, "
+                     f"each stop is -{r['honest_hi_loss']}% — one stop erases "
+                     f"{r['stops_per_win']} TP1 wins. The green feed exists ONLY because of the "
+                     f"win/loss leverage switch; on constant leverage it's net-losing.")
+        L.append("")
 
     if ev["high_cancel"]:
-        L.append("## FACT 3 — Selectively cancelled signals (losing setups quietly dropped)")
+        L.append("## FACT 2 — Selectively cancelled signals (losing setups quietly dropped)")
         for tag, rate, cancels, sigs in ev["high_cancel"]:
             L.append(f"- trader {tag}: {rate}% cancelled ({cancels} cancels vs {sigs} signals)")
         L.append("Why it's a trick: an unfilled limit order can't become a loss, so cancelling "
                  "'it just missed us' setups keeps losers out of the record.\n")
 
     if ev["negative_sum_r"]:
-        L.append("## FACT 4 — Actually losing on sum-of-R (win-rate hides it)")
+        L.append("## FACT 3 — Actually losing on sum-of-R (win-rate hides it)")
         for tag, r in ev["negative_sum_r"]:
             L.append(f"- {tag}: total {r}R over the period (negative = net losing)")
         L.append("Why it matters: counting 'wins' by quantity looks OK, but summing R shows "
                  "the money reality — these are net losers.\n")
 
     if ev["captured_deletions"]:
-        L.append("## FACT 5 — Posts they DELETED but we saved first")
+        L.append("## FACT 4 — Posts they DELETED but we saved first")
         for d in ev["captured_deletions"]:
             L.append(f"- msg {d['message_id']} posted {d['posted_at']}, deleted {d['deleted_at']}:")
             L.append(f'  "{d["text"]}"')
@@ -226,12 +244,12 @@ def render(ev: dict) -> str:
                  "direct proof of what they removed.\n")
 
     if ev["edits"]:
-        L.append("## FACT 6 — Edited-after-the-fact posts")
+        L.append("## FACT 5 — Edited-after-the-fact posts")
         for e in ev["edits"]:
             L.append(f"- msg {e['message_id']}: BEFORE \"{e['before']}\"  →  AFTER \"{e['after']}\"")
         L.append("")
 
-    if not any([ev["leverage_asymmetry"], ev["repost_inflation"], ev["high_cancel"],
+    if not any([ev["leverage_asymmetry"], ev["high_cancel"],
                 ev["negative_sum_r"], ev["captured_deletions"], ev["edits"]]):
         L.append("No manipulation patterns detected in the captured data for this channel.")
     return "\n".join(L)
