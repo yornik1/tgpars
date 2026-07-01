@@ -33,6 +33,10 @@ class ChannelProfile:
     lev_loss: re.Pattern | None = None
     # Algorithmic strategy-bot posts, e.g. «Стратегия «RSI(2) Коннора» ...».
     strategy: re.Pattern | None = None
+    # Sender_id of the resident "analyst" whose free-form BTC forecasts we score
+    # against real price (discussion chats have no structured signals, but one
+    # person posts directional calls worth grading). None if no such forecaster.
+    forecaster: int | None = None
     # Notes shown to the analyst about this channel's quirks.
     notes: tuple[str, ...] = field(default_factory=tuple)
 
@@ -76,7 +80,13 @@ CHANNEL_A = ChannelProfile(
 CHANNEL_B = ChannelProfile(
     name="channel_b",
     chat_ids=(-1001000000002,),
-    notes=("Discussion chat, not a structured-signal channel — generic checks only.",),
+    forecaster=1000000001,  # resident BTC forecaster (sender id)
+    notes=(
+        "Discussion chat, not a structured-signal channel — generic checks only.",
+        "A resident analyst posts free-form BTC forecasts (no "
+        "entry/stop/target); use --scorecard to grade their short-term direction "
+        "against real price.",
+    ),
 )
 
 

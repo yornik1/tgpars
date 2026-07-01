@@ -319,6 +319,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Concrete manipulation evidence for a channel.")
     parser.add_argument("--chat", type=int, required=True)
     parser.add_argument("--out", default=None)
+    parser.add_argument(
+        "--scorecard",
+        action="store_true",
+        help="also grade the channel's resident forecaster vs real price + audit id gaps",
+    )
     args = parser.parse_args()
 
     settings = load_settings()
@@ -327,7 +332,18 @@ def main() -> None:
     session_factory = make_session_factory(engine)
     with session_factory() as session:
         ev = gather(session, args.chat)
+        scorecard = None
+        if args.scorecard:
+            from . import forecast_scorecard as fsc
+
+            scorecard = fsc.render(
+                args.chat,
+                fsc.audit_id_gaps(session, args.chat),
+                fsc.score(session, args.chat),
+            )
     report = render(ev)
+    if scorecard:
+        report += "\n\n" + scorecard
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:
             fh.write(report + "\n")
