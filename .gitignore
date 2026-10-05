@@ -23,3 +23,34 @@ venv/
 # OS / IDE
 .DS_Store
 .idea/
+
+# secrets and credentials
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+credentials*.json
+secrets.json
+secrets.y*ml
+# local data
+*.db-journal
+*.db-wal
+*.db-shm
+# OS and local agent/IDE state
+.omc/
+.omx*
+.codex/
+.claude/
+.cursor/
+.agents/
+# project-specific
+knowledge/
+rag_pending.jsonl
+rag_vectors.npz
+*.npz
+exports/
